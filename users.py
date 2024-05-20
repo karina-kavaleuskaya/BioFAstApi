@@ -9,7 +9,9 @@ from datetime import datetime, timedelta
 import models
 import schemas
 from facade.file_facade import FILE_MANAGER
-from facade.containrt_facade import container_facade
+from facade.container_facade import container_facade
+from pathlib import Path
+
 
 
 
@@ -23,6 +25,10 @@ router = APIRouter(
     prefix='/users',
     tags=['Users']
 )
+
+
+UPLOAD_DIRECTORY = 'static/containers/'
+Path(UPLOAD_DIRECTORY).mkdir(parents=True, exist_ok=True)
 
 
 async def get_user(db: AsyncSession, email):
@@ -107,6 +113,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
 
 @router.post('/add-file/', response_model=schemas.Container)
 async def create_container(
+        user_id: int = Form(...),
         file: UploadFile = File(...),
         current_user: models.User = Depends(get_current_user),
 ):
@@ -114,8 +121,7 @@ async def create_container(
     await FILE_MANAGER.save_file(file, file_path)
 
     container_data = schemas.ContainerCreate(
-        user_id=current_user.id,
-        file_path=file_path
+        user_id=user_id
     )
 
     db_container = await container_facade.create_container(container_data, file_path)
