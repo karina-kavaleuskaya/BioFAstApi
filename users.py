@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Form, UploadFile, File
 from async_db import get_db
 from sqlalchemy.future import select
 from jose import jwt, JWTError
@@ -8,10 +8,14 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm, HT
 from datetime import datetime, timedelta
 import models
 import schemas
+from facade.file_facade import FILE_MANAGER
+from facade.containrt_facade import container_facade
+
+
 
 PWD_CONTEXT = CryptContext(schemes=['bcrypt'], deprecated='auto')
 ALGORITHM = 'HS256'
-SECRET_KEY = 'asdfghjkjhgrfdefgnjmk'
+SECRET_KEY = '****'
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 OAuth2_SCHEME = OAuth2PasswordBearer(tokenUrl='users/login')
 
@@ -101,3 +105,19 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
     return {'access_token': access_token, 'token_type': 'bearer'}
 
 
+@router.post('/add-file/', response_model=schemas.Container)
+async def create_container(
+        file: UploadFile = File(...),
+        current_user: models.User = Depends(get_current_user),
+):
+    file_path = f'static/containers/{current_user.id}/{file.filename}'
+    await FILE_MANAGER.save_file(file, file_path)
+
+    container_data = schemas.ContainerCreate(
+        user_id=current_user.id,
+        file_path=file_path
+    )
+
+    db_container = await container_facade.create_container(container_data, file_path)
+
+    return db_container
