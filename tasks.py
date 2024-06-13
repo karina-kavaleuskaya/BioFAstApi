@@ -1,8 +1,6 @@
-import asyncio
 import aiohttp
 from Bio import SeqIO
 from Bio.Blast import NCBIXML
-from Bio.Seq import Seq
 from Bio.Data import CodonTable
 import os
 import hashlib
@@ -10,6 +8,11 @@ import io
 import re
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import asyncio
+from celery import Celery
+
+
+celery_app = Celery('tasks', broker='amqp://guest:guest@localhost:5672//')
 
 
 # Get the standard genetic code table
@@ -19,6 +22,7 @@ genetic_code = CodonTable.unambiguous_dna_by_name["Standard"]
 blast_results_cache = {}
 
 blast_search_executor = ThreadPoolExecutor(max_workers=4)
+
 
 async def blast_search(protein_sequence):
     # Check if the result is already in the cache
@@ -96,12 +100,14 @@ def create_analysis_file(fast_file):
     return analysis_file
 
 
+@celery_app.task
 async def run_analysis_periodically():
     while True:
-        await run_analysis()
-        await asyncio.sleep(300)
+        await run_analysis.apply_async()
+        await asyncio.sleep(30)
 
 
+@celery_app.task
 async def run_analysis():
     directory = "static/containers"
     fast_files = find_fast_files(directory)
@@ -132,6 +138,8 @@ async def run_analysis():
                 os.makedirs(output_dir, exist_ok=True)
             with open(analysis_file, "w") as output:
                 output.write("BLAST results will be saved here.")
+
+    await asyncio.sleep(1)
 
 
 
