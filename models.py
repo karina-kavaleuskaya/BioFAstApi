@@ -19,8 +19,9 @@ class User(Base):
 class Container(Base):
     __tablename__ = 'container'
 
-    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True, nullable=False)
-    document_path = Column(String, nullable=False)
+    id = Column(Integer, primary_key=True, nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    file_path = Column(String, nullable=False)
 
     user = relationship('User', back_populates='container')
 

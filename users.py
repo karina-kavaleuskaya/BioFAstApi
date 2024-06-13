@@ -13,11 +13,9 @@ from facade.container_facade import container_facade
 from pathlib import Path
 
 
-
-
 PWD_CONTEXT = CryptContext(schemes=['bcrypt'], deprecated='auto')
 ALGORITHM = 'HS256'
-SECRET_KEY = '****'
+SECRET_KEY = 'cfghjmnbvcdxfghnm'
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 OAuth2_SCHEME = OAuth2PasswordBearer(tokenUrl='users/login')
 
@@ -111,19 +109,14 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
     return {'access_token': access_token, 'token_type': 'bearer'}
 
 
-@router.post('/add-file/', response_model=schemas.Container)
+@router.post('/add-file/', response_model=schemas.ContainerCreate)
 async def create_container(
-        user_id: int = Form(...),
         file: UploadFile = File(...),
         current_user: models.User = Depends(get_current_user),
 ):
     file_path = f'static/containers/{current_user.id}/{file.filename}'
     await FILE_MANAGER.save_file(file, file_path)
 
-    container_data = schemas.ContainerCreate(
-        user_id=user_id
-    )
-
-    db_container = await container_facade.create_container(container_data, file_path)
+    db_container = await container_facade.create_container(current_user.id, file_path)
 
     return db_container

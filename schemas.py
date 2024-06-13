@@ -31,7 +31,9 @@ class ContainerBase(BaseModel):
 
 
 class ContainerCreate(ContainerBase):
-    pass
+
+    class Config:
+        from_attributes = True
 
 
 class Container(ContainerBase):
