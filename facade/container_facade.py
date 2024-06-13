@@ -4,9 +4,9 @@ from facade.base_facade import BaseFacade
 
 
 class ContainerFacade(BaseFacade):
-    async def create_container(self, container_data: schemas.ContainerCreate, file_path: str) -> models.Container:
+    async def create_container(self, user_id: int, file_path: str) -> models.Container:
         db_container = models.Container(
-            user_id=container_data.user_id,
+            user_id=user_id,
             file_path=file_path,
         )
 
