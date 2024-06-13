@@ -1,8 +1,6 @@
-import asyncio
 import aiohttp
 from Bio import SeqIO
 from Bio.Blast import NCBIXML
-from Bio.Seq import Seq
 from Bio.Data import CodonTable
 import os
 import hashlib
