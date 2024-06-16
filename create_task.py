@@ -1,8 +1,6 @@
-import asyncio
 import aiohttp
 from Bio import SeqIO
 from Bio.Blast import NCBIXML
-from Bio.Seq import Seq
 from Bio.Data import CodonTable
 import os
 import hashlib
@@ -10,7 +8,6 @@ import io
 import re
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-
 
 # Get the standard genetic code table
 genetic_code = CodonTable.unambiguous_dna_by_name["Standard"]
@@ -21,52 +18,73 @@ blast_results_cache = {}
 blast_search_executor = ThreadPoolExecutor(max_workers=4)
 
 
-
 async def blast_search(protein_sequence):
     # Check if the result is already in the cache
     sequence_hash = hashlib.md5(str(protein_sequence).encode()).hexdigest()
     if sequence_hash in blast_results_cache:
         print('Got one result from cache')
-        return await asyncio.get_event_loop().run_in_executor(blast_search_executor, blast_search, protein_sequence)
+        return blast_results_cache[sequence_hash]
 
     # Perform online BLAST search
-    async with (aiohttp.ClientSession() as session):
+    async with aiohttp.ClientSession() as session:
         # Step 1: Submit the BLAST query and get the request ID
-        async with session.post("https://blast.ncbi.nlm.nih.gov/Blast.cgi", data={
-            "CMD": "Put",
-            "PROGRAM": "blastp",
-            "DATABASE": "swissprot",
-            "QUERY": str(protein_sequence)
-        }) as response:
-            response_text = await response.text()
-            request_id = re.search(r"RID = (\w+)", response_text).group(1)
+        try:
+            async with session.post("https://blast.ncbi.nlm.nih.gov/Blast.cgi", data={
+                "CMD": "Put",
+                "PROGRAM": "blastp",
+                "DATABASE": "swissprot",
+                "QUERY": str(protein_sequence)
+            }) as response:
+                response_text = await response.text()
+                request_id_match = re.search(r"RID = (\w+)", response_text)
+                if request_id_match:
+                    request_id = request_id_match.group(1)
+                else:
+                    print(f"Error: Could not extract request ID from BLAST response. Response text: {response_text}")
+                    return None
+        except Exception as e:
+            print(f"Error: Exception occurred while submitting BLAST query: {e}")
+            return None
 
         # Step 2: Check the status of the BLAST query and wait for it to complete
         status = "WAITING"
         while status in ["WAITING", "QUEUED"]:
-            await asyncio.sleep(10)  # Wait for 10 seconds before checking the status again
-            async with session.get(f"https://blast.ncbi.nlm.nih.gov/Blast.cgi?CMD=Get&FORMAT_OBJECT=SearchInfo&RID={request_id}") as status_response:
-                status_text = await status_response.text()
-                status = re.search(r"Status=(\w+)", status_text).group(1)
+            try:
+                await asyncio.sleep(10)  # Wait for 10 seconds before checking the status again
+                async with session.get(
+                        f"https://blast.ncbi.nlm.nih.gov/Blast.cgi?CMD=Get&FORMAT_OBJECT=SearchInfo&RID={request_id}") as status_response:
+                    status_text = await status_response.text()
+                    status_match = re.search(r"Status=(\w+)", status_text)
+                    if status_match:
+                        status = status_match.group(1)
+                    else:
+                        print(f"Error: Could not extract status from BLAST response. Status text: {status_text}")
+                        return None
+            except Exception as e:
+                print(f"Error: Exception occurred while checking BLAST status: {e}")
+                return None
 
         # Step 3: Once the query is done, fetch the BLAST results in XML format
         if status == "READY":
             print('BLAST query is ready')
-            async with session.get(f"https://blast.ncbi.nlm.nih.gov/Blast.cgi?CMD=Get&FORMAT_TYPE=XML&RID={request_id}"
-                                   ) as result_response:
-                result_text = await result_response.text()
-                if result_text.startswith('<?xml'):
-                    blast_record = NCBIXML.read(io.StringIO(result_text))
-                    # Cache the result
-                    blast_results_cache[sequence_hash] = blast_record
-                    return blast_results_cache[sequence_hash]
-                else:
-                    raise ValueError("BLAST response was not in XML format.")
+            try:
+                async with session.get(
+                        f"https://blast.ncbi.nlm.nih.gov/Blast.cgi?CMD=Get&FORMAT_TYPE=XML&RID={request_id}") as result_response:
+                    result_text = await result_response.text()
+                    if result_text.startswith('<?xml'):
+                        blast_record = NCBIXML.read(io.StringIO(result_text))
+                        # Cache the result
+                        blast_results_cache[sequence_hash] = blast_record
+                        return blast_results_cache[sequence_hash]
+                    else:
+                        print(f"Error: BLAST response was not in XML format. Response text: {result_text}")
+                        return None
+            except Exception as e:
+                print(f"Error: Exception occurred while fetching BLAST results: {e}")
+                return None
         else:
-            raise ValueError(f"BLAST query failed with status: {status}")
-
-        await asyncio.sleep(1)  # Имитация асинхронной работы
-        return "BLAST результат"
+            print(f"Error: BLAST query failed with status: {status}")
+            return None
 
 
 async def process_sequences(sequences):
@@ -76,7 +94,7 @@ async def process_sequences(sequences):
         # Trim sequence to make it a multiple of three
         trimmed_sequence = dna_sequence[:len(dna_sequence) - (len(dna_sequence) % 3)]
         # Translate all six frames and create BLAST tasks
-        for frame in range(6):
+        for frame in range(1):
             frame_sequence = trimmed_sequence[frame:]
             protein_sequence = frame_sequence.translate(table=genetic_code, to_stop=False)
             tasks.append(blast_search(protein_sequence))
@@ -96,12 +114,6 @@ def find_fast_files(directory):
 def create_analysis_file(fast_file):
     analysis_file = os.path.splitext(fast_file)[0] + "_analysis.txt"
     return analysis_file
-
-
-async def run_analysis_periodically():
-    while True:
-        await run_analysis()
-        await asyncio.sleep(300)
 
 
 async def run_analysis():
@@ -134,6 +146,17 @@ async def run_analysis():
                 os.makedirs(output_dir, exist_ok=True)
             with open(analysis_file, "w") as output:
                 output.write("BLAST results will be saved here.")
+
+
+async def main():
+    while True:
+        await run_analysis()
+        await asyncio.sleep(300)  # Wait 5 minutes before checking again
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
 
 
 
