@@ -20,6 +20,8 @@ blast_results_cache = {}
 
 blast_search_executor = ThreadPoolExecutor(max_workers=4)
 
+
+
 async def blast_search(protein_sequence):
     # Check if the result is already in the cache
     sequence_hash = hashlib.md5(str(protein_sequence).encode()).hexdigest()
